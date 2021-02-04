@@ -1,28 +1,415 @@
 ---
-title: "EDA in Chess"
-output: html_document
+title: "EDA in Chess using Ggplot and Dplyr"
+author: "By: Petar Micevski"
+output: html_notebook
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+Hello! My name is Petar Micevski and this is my first official take on Exploratory Data Analysis using a favorite hobby of mine: Chess. I'm excited (*and mostly curious*) to see how my assumptions in Chess compare to a sample collected from a popular chess website known as Lichess. For those of you familiar with Chess, I am currently and unofficially ranked at a *staggering* **1300**. For those unfamiliar with Chess, it means that I am exactly half as good as a Grandmaster (*obviously*). Below, you can see a Table of Contents to get yourself started. Feel free to click on any of the links to explore my code and thought process throughout this entire project.
+
+#### Table of Contents
+
+- Part 1: [Dataset Information](#info)
+
+- Part 2: [Cleaning and Prepping the Data](#clean)
+
+- Part 3: [Basic Summaries](#basic)
+
+- Part 4: [Questions to Answer](#questions)
+  
+- Part 5: [Summary and Final Thoughts](#summary)
+
+## Part I: Dataset Information {#info}
+For starters, the dataset I have used in this project was found on [Kaggle](https://www.kaggle.com/datasnaek/chess) and called `games.csv`. 
+
+**Description:  ** The csv file `games.csv` is a collection of over 20,000 games on [lichess.org](lichess.org). It was collected through an API where it was able to gather information for separate chess games that had already occurred. In it, there are 16 columns, namely: 
+
+* **Game ID**: `id`;
+
+* **Rated**: `rated`;
+
+* **Start Time**: `created_at`;
+
+* **End Time**: `last_move_at`;
+
+* **Number of Turns**: `turns`;
+
+* **Game Status**: `victory_status`;
+
+* **Winner**: `winner`;
+
+* **Time Increment**: `increment`;
+
+* **White Player ID**: `white_id`;
+
+* **White Player Rating**: `white_rating`;
+
+* **Black Player ID**: `black_id`;
+
+* **Black Player Rating**: `black_rating`;
+
+* **All Moves in Chess Notation**: `moves`;
+
+* **Opening Eco** (Standardised Code for any given opening, [list here](https://www.365chess.com/eco.php)): `opening_eco`;
+
+* **Opening Name**: `opening_name`;
+
+* **Opening Ply** (Number of moves in the opening phase): `opening_ply`;
+
+Originally, the intent of the dataset was to recognize patterns within the games and draw valuable information that can determine the reasons for white or black's victory. After thorough analysis of the dataset, I hope I will be able to derive such information with the help of Ggplot and Dplyr.
+
+## Part II: Cleaning/Prepping Dataset {#clean}
+```{r message=FALSE, warning=FALSE}
+#Imports for project start
+library(tidyverse)
+library(gridExtra)
+library(GGally)
+library(e1071)
+
+#g = original dataset
+g <- read_csv("games.csv")
+```
+Most of the cleaning I did was done on Microsoft Excel. Upon first inspection, I noticed that there were several columns that either needed to be deleted, simplified, or added. Ulitmately, my decisions consisted of: 
+
+**Deleting** columns
+`id`, `moves`, `opening_eco`
+
+**Simplifying** `opening_name` by deleting all variations of play. The reason for this was because I wanted to record the most common unique openings, and since each opening has many variations, there were too many entries in the graph. After cleaning it in Excel using functions like *SEARCH()*, *LEFT()*, and *RIGHT()*, I was able to simplify the opening count from `r n_distinct(g$opening_name)` to `r n_distinct(c$opening_name)`. 
+
+
+**Adding** an extra column to `increment` by splitting it into `start_time` and `increment_time`. Finally, I recognized the rank of both white and black by using the following table that uses the [ELO Rating System](https://en.wikipedia.org/wiki/Chess_rating_system#Elo_rating_system). This ranking system is used by the *World Chess Federation* (*FIDE*), and groups the various players of chess by the following table:
+
+
+|Lower Bound|Upper Bound|Title|
+|-----------|-----------|-----|
+|0|1199|Novice|
+|1200|1399|Class D|
+|1400|1599|Class C|
+|1600|1799|Class B|
+|1800|1999|Class A|
+|2000|2199|Expert|
+|2200|2299|Candidate Master (CM)|
+|2300|2399|FIDE Master (FM)|
+|2400|2499|International Master (IM)|
+|2500|+|Grandmaster (GM)|
+
+Finally, we can import our revised dataset
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# c = revised dataset
+c <- read_csv("chess.csv")
+
+#Convert ELO Ranks to Factors
+c$white_rank <- factor(c$white_rank, levels = c("Novice","Class D","Class C","Class B",
+                                                "Class A","Expert","CM","FM","IM","GM"))
+
+c$black_rank <- factor(c$black_rank, 
+                       levels = c("Novice","Class D","Class C","Class B",
+                                  "Class A","Expert","CM","FM","IM","GM"))
+
+
+c$avg_rank <- factor(c$avg_rank, levels = c("Novice","Class D","Class C","Class B",
+                                            "Class A","Expert","CM","FM","IM","GM"))
+
+
+#Check
+str(c$white_rank)
 ```
 
-## R Markdown
+*Let's get started!*
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
 
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+## Part III: Basic Summaries {#basic}
+First, lets start off with some histograms of `white_rating` and `black_rating`.
+```{r rating_histograms, echo=TRUE, warning=FALSE, fig.show='hold'}
+# Histograms of White and Black
+# -----------------------------
 
-```{r cars}
-summary(cars)
+ggplot(c, aes(white_rating)) + 
+  geom_histogram(binwidth = 100,
+                 fill = "#ffffff", 
+                 color = "#444444") + 
+  ggtitle("White Rating Distribution")
+
+ggplot(c, aes(black_rating)) + 
+  geom_histogram(binwidth = 100 ,
+                 fill = "#444444", 
+                 color = "#ffffff") + 
+  ggtitle("Black Rating Distribution")
+```
+Based on the above graphs, we can see that the ratings of white and black are normally distributed. There is a very slight positive skew of `r round(skewness(c$white_rating),2)` and `r round(skewness(c$black_rating),2)` respectively. The reason why so many players are in the 1500 bin is because according to Lichess, any new players that join are automatically ranked at 1500, and if `rated` *= FALSE*, then the rank would remain unchanged. You can see this presence when we plot `white_rating` to `black_rating` and then facet wrap by `rated`.
+```{r rated_proof}
+ggplot(c, aes(white_rating, black_rating,)) + 
+  geom_point(alpha = .1, 
+             color = "lightskyblue") + 
+  labs(x = "White Rating", 
+       y = "Black Rating") + 
+  ggtitle("Black vs. White Ratings by rated") +
+  facet_wrap(~rated)
+```
+Because of this, players who choose to play "unofficial" matches (rated = FALSE) will likely have more spread since Lichess's pairing algorithm only uses it for rated matches.This can be proved by doing the following calculation:
+```{r echo=TRUE}
+#Calculation for unofficial matches
+rated_false <- subset(c, rated == FALSE)
+
+# Use abs() to find proper average spread
+#Unofficial spread output
+mean(abs(rated_false$spread))
+
+#Calculation for official matches
+#Official spread output
+rated_true <- subset(c, rated == TRUE)
+mean(abs(rated_true$spread))
+
 ```
 
-## Including Plots
+Additionally, you can see how the unrated matches depict the "new player" sample, and since these players are not performing to their actual rating, it is wise to take them out of consideration when performing certain summaries in the future. 
 
-You can also embed plots, for example:
+Next, we will look at categorical variables `rated`,`victory_status`, and `winner`.
+```{r echo=FALSE,fig.show='hold'}
+ggplot(c, aes(rated)) + 
+  geom_bar() + 
+  labs(x = "Rated", y = "Number of Games") +
+  ggtitle("Count of Ranked and Unranked Games")
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+ggplot(c, aes(victory_status)) + 
+  geom_bar() + 
+  labs(x = "Victory Type", y = "Number of Games") +
+  ggtitle("Type of Victories")
+
+ggplot(c, aes(winner)) + 
+  geom_bar() + 
+  labs(x = "Winner", y = "Number of Games") +
+  ggtitle("Winner or Draw")
 ```
+From the bar charts above, we can conclude that most of the collected games are rated, won by resigning or mate, and was won by white slightly over 50% of the time. These results will be very useful in telling us more information when we go deeper in our analysis.
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+Finally, we look at the distribution of turns and book moves
+```{r fig.show='hold'}
+ggplot(c, aes(turns)) + 
+  geom_histogram(bins = 20)
+
+ggplot(c, aes(opening_ply)) + 
+  geom_histogram(bins = 25)
+```
+Both exhibit a positively skewed graph. The reason for this is as you go up in the ranks, more people will understand opening theory, therefore greater moves of `opening_ply`. As a result, more theory implies longer games since both sides are more knowledgeable in the opening, middle, and endgame.
+
+Now that we have seen some basic summaries, now it is time to look into some more in depth questions to see what other information lies below the surface.
+
+
+## Part IV: Questions to Answer {#questions}
+  1. [Winning Proportions by Rank](#win)
+  2. [Possible Threshold for Guaranteed Win](#thresh)
+  3. [Top Openings and More](#openings)
+  4. [Most Active Players](#users)
+  5. [Regression on Ratings](#reg)
+
+### 1) Winning Proportions by Rank {#win}
+In this question, we are going to take a look at the proportion of wins when divided amongst the rank of the players. Based on my opinion, I expect white's winning percentage to be more than 50% in the beginning but slowly flatten out to approximately half on each side. After we execute this code, the graph we get is:
+```{r}
+c %>% 
+ggplot(aes(avg_rank))+ 
+  geom_bar(aes(fill = winner),
+           position = "fill")+ 
+  coord_flip()+ 
+  scale_fill_manual(values = c("#444444","#999999","#ffffff"))+ 
+  labs(x = "Average Rank", 
+       y = "Percentage of Wins")+
+  ggtitle("Proportion of Wins by Rank")
+```
+The reason why Grandmasters are not portrayed was because I took the `avg_rank` of each game, which means that when a GM would play, it would be someone of a lower rank which brought the `avg_rank` to an IM rating. Additionally, the graph surprisingly shows black with an advantage as the ratings increase, which proves that as you increase the amount of expertise in chess, white's immediate advantage is not a strong influence of the game itself. Moreover, an increase in draws is also present in higher ranks because people performing at that rating are able to sometimes force a draw in a lost position. In higher ranks, strategy ultimately outweighs tactical knowledge.
+
+### 2) Possible Threshold for Guaranteed Win {#thresh}
+In the second question, we will try to find a threshold *x* that guarantees a specified win percentage against my opponents. For me, a preferable winning percent is 100%, but that is *very* unrealistic, so I will settle for 85% in the name of quantitative analysis. 
+
+The column we are going to use to find this threshold is `spread`. Spread is equal to `white_rating`-`black_rating`, so a positive spread implies that white has the higher ranking hence the advantage. Same works for a increasingly negative spread and black's advantage. A spread of 0 implies that the players are the same rank. When we plot the graph, we are using only official games since we do not want to include any unreliable games that might give us misinformation.
+```{r echo=TRUE}
+ c %>% 
+  filter(rated == TRUE) %>% 
+  ggplot(aes(spread)) +
+    geom_histogram(aes(fill = winner),
+                   position = "fill",
+                   bins = 25) +
+    scale_fill_manual(values = c("#444444","#999999","#ffffff"))+
+    geom_vline(xintercept = 0, 
+               color = "red", 
+               alpha = .5) +
+  geom_hline(yintercept = .15, 
+               color = "green", 
+               alpha = .5) +
+  geom_hline(yintercept = .85, 
+               color = "green", 
+               alpha = .5) +
+  theme(legend.position = "none")
+```
+From the graph, we can deduce via the green lines that in order to have a guaranteed (85%) chance of beating my opponents, I would have to be 350 rating points higher than them regardless of color. Per the dataset, the chance of me being paired with someone with that much spread is `r round((nrow(filter(c,(spread >=350& rated ==TRUE) | (spread <=-350&rated==TRUE))) * 100 )/ length(c$spread),2)`%, which is essentially 1 in 10 games. This is not an unlikely score if you play consistently throughout the day.
+For absolute certainty, the spread for a theoretically perfect win is around 1000, but the percent that someone gets paired with that spread is very unlikely (`r round((nrow(filter(c,(spread >=1000& rated ==TRUE) | (spread <=-1000&rated==TRUE))) * 100 )/ length(c$spread),2)`%). 
+
+
+### 3) Percentiles, Openings, and More {#openings}
+In this section, we are going to look at percentiles by rank, openings per rank, turns per rank, and average time utilization by rank.
+
+For starters, lets look at what percentile each rank hits. I calculated the following table by finding what percentage each rank makes up of the total rows and then calculating a cumulative sum of the percentages. Based on those calculations, the table I came up with was the following:
+
+|Rank|Percentile|
+|----|----------|
+|Novice|7.95%|
+|Class D **(Me)**|25.16%|
+|Class C|54.02%|
+|Class B|75.67%|
+|Class A|90.99%|
+|Expert|97.08%|
+|Candidate Master (CM)|98.91%|
+|FIDE Master (FM)|99.4%|
+|International Master (IM)|99.79%|
+|Grandmaster (GM)|100%|
+
+Clearly, I have quite some work to do if I am going to be facing the World Champion anytime soon. Ultimately, the table above not only proves that it is very difficult to obtain a title of any master, but also debunks the fact that I am half as good as a Grandmaster. Oh well.
+
+Next, we are going to observe some averages between each rank in order to see how players of different ranks perform quantitatively.
+```{r}
+c %>%
+  group_by(white_rank) %>%
+  summarize(n = n(), 
+            `Book Moves` = round(mean(opening_ply),2),
+            `Avg Turns` = round(mean(turns),2),
+            `Avg Start Time` = round(mean(start_time),2),
+            `Avg Inc Time` = round(mean(increment_time),2)) %>% 
+  rename(`Ranks` = white_rank,
+         `Count` = n)
+```
+At a first glance, I can clearly see that as the ranks go up, so does the Book Moves, which means that people of those ranks are more knowledgable in theoretical openings. However, what stood out to me was the turns, incremenet times, and start times for IMs and GMs. Clearly, IMs and GMs tend to take less turns than their previous ranks, about the same starting time, but a drastic increase in increment time. My reasoning for this is that at that level, they want to focus on the game, not the time, which means that there are a very small *outoftime* `victory_status`. In fact, in terms of `victory_status`, *outoftime* percentage is `r round(nrow(filter(c,(white_rank == "IM" | white_rank == "GM")& victory_status == "outoftime"))/ length(c$victory_status),2)`. With such large increments, players of that status mostly resign earlier because they can see more moves ahead which also reduces the amount of turns taken at that rank.
+  
+Now, lets look at the top openings by rank. I want to see this so I have an idea of what openings are most theorized, studied, and implemented on the chess board.
+```{r top_openings, echo=TRUE, message=FALSE, warning=FALSE}
+c %>% 
+    group_by(white_rank) %>% 
+    count(opening_name) %>% 
+    arrange(desc(n), 
+            .by_group = TRUE) %>% 
+    top_n(5)
+```
+Some of these openings have a recurring theme. Openings like *Queen's Pawn*, *French Defence*, *Sicilian Defence*, and *Queen's Gambit* are openings that are recommended for starting chess players. In fact, the most theoretical line as of this project is the *Sicilian Defence*. Another cool fact about these openings are that they follow the fundamental chess principles, which is to open with a central pawn (*d4 or e4*). When you do into the higher ranks, players know the nitty-gritty of the most common openings and must resort to either strategic intuition or less played openings to obtain a competitive advantage. Personally, my favorite opening currently is the *Queen's Gambit*, which is the most played opening for a GM. Therefore, there is no doubt in my mind that I am capable of playing like a GM.
+
+
+### 4) Most Active Users {#users}
+In our final section of EDA, I want to take a look at the most frequent players within the timespan of our data collection. 
+
+We will start with the most active players playing white.
+```{r message=FALSE, warning=FALSE}
+c %>% 
+    count(white_id) %>% 
+    arrange(desc(n), 
+            .by_group = TRUE) %>%
+    rename(`Active White Players` = white_id, 
+           `Num Games` = n) %>% 
+    top_n(20)
+```
+  Now lets do the most active players playing black.
+```{r message=FALSE, warning=FALSE}
+c %>% 
+    count(black_id) %>% 
+    arrange(desc(n), 
+            .by_group = TRUE) %>%
+    rename(`Active Black Players`=black_id, 
+           `Num Games` = n) %>% 
+    top_n(20)
+```
+Next, we find the total amount of games played, regardless of player color. I did this part in Excel by using Pivot Tables since I am more proficient in Excel than R. From that, I was able to see the most frequent players during the time of the data collection. Then, I subsetted each game using filter in Excel and sorted by an ascending `created_at`. When we put them together, we find that the most active players regardless of color is the following tibble:
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+freq_players <- read_csv("most_frequent_players.csv")
+freq_players %>% 
+  rename(`Username` = user, 
+         `Games Played` = games_played)
+```
+Finally, I wanted to track the ratings of the 10 most frequent players to see how they performed while playing all of their games.
+```{r players_charts, echo=TRUE, message=FALSE, warning=FALSE}
+active_total <- read_csv("active_total.csv")
+ggplot(active_total, 
+       aes(game, rating)) + 
+  geom_line(aes(group = user, 
+                color = user))+
+  ggtitle("10 Most Active Players")
+```
+What made me really interested in this graph is how well it shows preference. Initially, you can see that most of these ratings look like stock prices. However, if we look at *king5891's* graph, its basically a y-intercept. The reason for this is preference. *King5891* is a player that is risk adverse by not playing any rated matches. That is why his track is perfectly linear. While it is good for his score, *king5891's* performance is not good for my analysis.
+
+Personally, I would advise to take another minute to look at this graph because it is wonderful to see how you can tell a story just by looking at a line graph. If you're sick and tired of it, Question 5 is below.
+
+
+### 5) Regression on Ratings {#reg}
+Finally, I wanted to see if we could create a regression model that is able to predict `black_rating` solely from `white_rating`. The reason for this is because in a theoretically perfect world, your opponent's rating should be exactly the same as yours, which is a perfectly linear relationship. Before I go into the regression model, the assumptions I want to abide by are:
+
+- Using official games because they have less spread and therefore a better representation of the true value of black's rating.
+- Solely use `white_rating` in order to reduce the effect of multicollinearity amongst other variables such as `opening_ply` or `turns`.
+
+Given the assumptions above, the regression model will be as follows:
+```{r reg_model}
+official_games <- filter(c, rated == TRUE)
+#Set seed for replication
+set.seed(2020)
+n <- length(official_games$white_rating)
+
+#Establishing a partition between train and test data
+trainIndex <- sample(1:n, size = round(.6*n), replace = FALSE)
+train <- official_games[trainIndex, ]
+test <- official_games[-trainIndex, ]
+
+#Making the regression model with train data
+trainReg <- lm(black_rating ~ white_rating, data = train)
+summary(trainReg)
+
+```
+As you can see, the model is able to predict `black_rating` with a very good level of significance.
+
+Now we will compare the predictions of the training data to the test and graphically look at our regression model to our perfect theoretical scenario.
+```{r message=FALSE, warning=FALSE}
+# Uses training regression model to calculate
+# errors between predicted tests and actual test
+predict.test<- predict(trainReg, test)
+
+# Graph that shows regression and a line with slope of 1
+ggplot(test,aes(white_rating,black_rating))+ 
+  geom_point(alpha = .1,
+             color = "lightskyblue") +
+  
+  #Regression Line
+  geom_smooth(method = "lm", 
+              color = "red") + 
+  
+  #Theoretically Perfect Line
+  geom_abline()+
+  ggtitle("Black Rating vs. White Rating")
+
+```
+Per the graph above, we can see that the regression model *(in red)* comes pretty close to representing a theoretically perfect model *(in black)*. The reason why it doesn't is because of uncontrollable factors like player availability and setting preference.
+
+
+Finally, lets calculate some summary measures for the accuracy and performance of our model.
+```{r}
+# Error from actual - predicted test values
+error <- test$black_rating - predict.test
+
+# Summary outputs for model accuracy and performance
+test %>% 
+     summarize(SSE = sum(error^2),
+               RMSE = round(sqrt(SSE / nrow(test)),2),
+               MAE = round(mean(abs(error)),2),
+               MAPE = round(mean(abs(error) / test$black_rating),3))
+```
+With a Mean Average Percent Error (MAPE) of 9.7%, I would say that our model is a fair success. On average, my regression model was off by 201 rating points, which is slightly less accurate than the actual average spread of `r round(mean(abs((filter(c,rated==TRUE))$spread)),2)`. Overall, I would say that some factors that could definitely improve my regression model are games played and victories/defeats against certain ranks. 
+
+
+## Part V: Summary and Final Thoughts {#summary}
+
+After analyzing all of this information, here is the rundown of the most important points and recommendations of my project:
+
+* Im not going to be any type of master anytime soon as a chess rank of 1300 implies that I am the bottom 25th percentile, or as I like to call it, the top 75th percentile
+
+* Whenever I start a game, I should make it an official game so I can be more accurately paired with someone closer to my rank. If I play an unrated game, I can loosen up.
+
+* In order to improve my rank, I need to study more opening lines and understand the strategic reasoning behind my moves. Eventually, strategic intuition and following chess principles outweighs book moves
+
+* To avoid uneccesary flaggings, I should include an increment to my time so I could focus on the game at hand, not the ticking clock
+
+* If I see a player ranked 350 points less than me, I can relax because I have an 85% chance of having the game in the bag. If I see a player ranked 1000 points less than me, I can win the game blindfolded no question
+
+* Playing actively does not necessarily mean playing well. Most players that play start and finish around the same rank as before
+
