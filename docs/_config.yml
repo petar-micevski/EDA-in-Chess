@@ -1,1 +1,12 @@
-theme: jekyll-theme-cayman
+name: "Chess"
+output_dir: "docs"
+navbar:
+  title: "R Markdown Projects"
+  left:
+  - text: "Home"
+   href: index.html
+  - text: "Speed and Distance"
+   href: speed-and-distance.html
+output:
+  html_document:
+ theme: cosmo
